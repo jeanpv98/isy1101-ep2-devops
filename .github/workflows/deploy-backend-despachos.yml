@@ -1,0 +1,55 @@
+name: CI/CD Backend Despachos
+
+# Se activa con push a la rama deploy
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-push-deploy:
+    name: Build → Push → Deploy Backend Despachos
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Obtener el código
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      # 2. Login en Docker Hub
+      - name: Login en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. Build y push de la imagen
+      - name: Build y Push imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/backend-despacho:latest
+
+      # 4. Despliegue en EC2 Backend (acceso via IP pública)
+      - name: Deploy en EC2 Backend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_BACKEND_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/backend-despacho:latest
+            docker stop back_despachos || true
+            docker rm back_despachos || true
+            docker run -d \
+              --name back_despachos \
+              --restart always \
+              -p 8081:8081 \
+              -e DB_ENDPOINT=${{ secrets.DB_ENDPOINT }} \
+              -e DB_PORT=3306 \
+              -e DB_NAME=${{ secrets.DB_NAME }} \
+              -e DB_USERNAME=${{ secrets.DB_USERNAME }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              ${{ secrets.DOCKERHUB_USERNAME }}/backend-despacho:latest
+            echo "✅ Backend Despachos desplegado en EC2"

@@ -1,0 +1,50 @@
+name: CI/CD Frontend
+
+# Se activa con push a la rama deploy
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-push-deploy:
+    name: Build → Push → Deploy Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Obtener el código
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      # 2. Login en Docker Hub
+      - name: Login en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. Build y push de la imagen
+      - name: Build y Push imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: ./front_despacho
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/frontend-despacho:latest
+
+      # 4. Despliegue en EC2 Frontend (IP pública)
+      - name: Deploy en EC2 Frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_FRONTEND_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/frontend-despacho:latest
+            docker stop front_despacho || true
+            docker rm front_despacho || true
+            docker run -d \
+              --name front_despacho \
+              --restart always \
+              -p 80:80 \
+              ${{ secrets.DOCKERHUB_USERNAME }}/frontend-despacho:latest
+            echo "✅ Frontend desplegado en EC2"
